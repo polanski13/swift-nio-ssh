@@ -13,5 +13,5 @@
 //===----------------------------------------------------------------------===//
 
 enum Constants {
-    static let version = "SSH-2.0-SwiftNIOSSH_1.0"
+    static let version = "SSH-2.0-Termy_1.2.0"
 }
