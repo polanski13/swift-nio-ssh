@@ -13,7 +13,7 @@
 //===----------------------------------------------------------------------===//
 
 public enum Constants: Sendable {
-    static let version = "SSH-2.0-SwiftNIOSSH_1.0"
+    static let version = "SSH-2.0-Termy_1.2.0"
 
     /// The default maximum size, in bytes, of a channel data payload that we advertise we are
     /// willing to receive (the "maximum packet size" of an SSH channel, RFC 4254 §5.1). The RFC
