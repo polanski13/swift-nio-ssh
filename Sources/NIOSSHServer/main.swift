@@ -83,7 +83,7 @@ func sshChildChannelInitializer(_ channel: Channel, _ channelType: SSHChannelTyp
                 }
             }
         }
-    case .forwardedTCPIP:
+    case .forwardedTCPIP, .directStreamLocal:
         return channel.eventLoop.makeFailedFuture(SSHServerError.invalidChannelType)
     }
 }

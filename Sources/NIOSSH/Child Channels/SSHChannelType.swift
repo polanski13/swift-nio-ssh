@@ -35,6 +35,10 @@ public enum SSHChannelType: Equatable, Sendable {
 
     /// "Forwarded TCP/IP" is a connection that was accepted from a listening socket and is being forwarded to the client.
     case forwardedTCPIP(ForwardedTCPIP)
+
+    /// "Direct streamlocal" is an OpenSSH extension (`direct-streamlocal@openssh.com`) that opens a
+    /// channel to a Unix domain socket on the server. Equivalent to `ssh -L /local.sock:/remote.sock`.
+    case directStreamLocal(DirectStreamLocal)
 }
 
 extension SSHChannelType {
@@ -68,6 +72,19 @@ extension SSHChannelType {
             self.targetHost = targetHost
             self._targetPort = targetPort
             self.originatorAddress = originatorAddress
+        }
+    }
+}
+
+extension SSHChannelType {
+    /// ``SSHChannelType/DirectStreamLocal`` opens a Unix-domain socket on the server using
+    /// OpenSSH's `direct-streamlocal@openssh.com` channel extension.
+    public struct DirectStreamLocal: Equatable, Sendable {
+        /// The absolute path of the Unix-domain socket on the server.
+        public var socketPath: String
+
+        public init(socketPath: String) {
+            self.socketPath = socketPath
         }
     }
 }
@@ -129,6 +146,8 @@ extension SSHChannelType {
                     originatorAddress: message.originatorAddress
                 )
             )
+        case .directStreamLocal(let message):
+            self = .directStreamLocal(.init(socketPath: message.socketPath))
         }
     }
 }
@@ -154,6 +173,8 @@ extension SSHMessage.ChannelOpenMessage.ChannelType {
                     originatorAddress: data.originatorAddress
                 )
             )
+        case .directStreamLocal(let data):
+            self = .directStreamLocal(.init(socketPath: data.socketPath))
         }
     }
 }

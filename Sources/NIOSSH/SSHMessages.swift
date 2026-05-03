@@ -221,6 +221,7 @@ extension SSHMessage {
             case session
             case forwardedTCPIP(ForwardedTCPIP)
             case directTCPIP(DirectTCPIP)
+            case directStreamLocal(DirectStreamLocal)
         }
 
         struct ForwardedTCPIP: Equatable {
@@ -233,6 +234,12 @@ extension SSHMessage {
             var hostToConnectTo: String
             var portToConnectTo: UInt16
             var originatorAddress: SocketAddress
+        }
+
+        // OpenSSH "direct-streamlocal@openssh.com" — client-initiated forward to a Unix domain socket.
+        // Defined in PROTOCOL §2.4 of openssh-portable.
+        struct DirectStreamLocal: Equatable {
+            var socketPath: String
         }
 
         var type: ChannelType
@@ -902,6 +909,17 @@ extension ByteBuffer {
                     )
                 )
 
+            case "direct-streamlocal@openssh.com":
+                guard
+                    let socketPath = self.readSSHStringAsString(),
+                    self.readSSHStringAsString() != nil,
+                    self.readInteger(as: UInt32.self) != nil
+                else {
+                    return nil
+                }
+
+                type = .directStreamLocal(.init(socketPath: socketPath))
+
             default:
                 throw NIOSSHError.unknownPacketType(diagnostic: "Channel request with \(typeRawValue)")
             }
@@ -1454,6 +1472,9 @@ extension ByteBuffer {
 
         case .directTCPIP:
             writtenBytes += self.writeSSHString("direct-tcpip".utf8)
+
+        case .directStreamLocal:
+            writtenBytes += self.writeSSHString("direct-streamlocal@openssh.com".utf8)
         }
 
         writtenBytes += self.writeInteger(message.senderChannel)
@@ -1477,6 +1498,11 @@ extension ByteBuffer {
             writtenBytes += self.writeInteger(UInt32(data.portToConnectTo))
             writtenBytes += self.writeSSHString((data.originatorAddress.ipAddress ?? "<nio-error>").utf8)
             writtenBytes += self.writeInteger(UInt32(data.originatorAddress.port ?? -1))
+
+        case .directStreamLocal(let data):
+            writtenBytes += self.writeSSHString(data.socketPath.utf8)
+            writtenBytes += self.writeSSHString("".utf8)
+            writtenBytes += self.writeInteger(UInt32(0))
         }
 
         return writtenBytes
