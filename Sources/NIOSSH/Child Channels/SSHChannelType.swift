@@ -35,6 +35,10 @@ public enum SSHChannelType: Equatable, NIOSSHSendable {
 
     /// "Forwarded TCP/IP" is a connection that was accepted from a listening socket and is being forwarded to the client.
     case forwardedTCPIP(ForwardedTCPIP)
+
+    /// "Direct streamlocal" is an OpenSSH extension (`direct-streamlocal@openssh.com`) that opens a
+    /// channel to a Unix domain socket on the server. Equivalent to `ssh -L /local.sock:/remote.sock`.
+    case directStreamLocal(DirectStreamLocal)
 }
 
 public extension SSHChannelType {
@@ -67,6 +71,17 @@ public extension SSHChannelType {
             self.targetHost = targetHost
             self._targetPort = targetPort
             self.originatorAddress = originatorAddress
+        }
+    }
+}
+
+public extension SSHChannelType {
+    struct DirectStreamLocal: Equatable, NIOSSHSendable {
+        /// The absolute path of the Unix domain socket on the server to connect to.
+        public var socketPath: String
+
+        public init(socketPath: String) {
+            self.socketPath = socketPath
         }
     }
 }
@@ -114,6 +129,8 @@ extension SSHChannelType {
             self = .directTCPIP(.init(targetHost: message.hostToConnectTo, targetPort: message.portToConnectTo, originatorAddress: message.originatorAddress))
         case .forwardedTCPIP(let message):
             self = .forwardedTCPIP(.init(listeningHost: message.hostListening, listeningPort: message.portListening, originatorAddress: message.originatorAddress))
+        case .directStreamLocal(let message):
+            self = .directStreamLocal(.init(socketPath: message.socketPath))
         }
     }
 }
@@ -127,6 +144,8 @@ extension SSHMessage.ChannelOpenMessage.ChannelType {
             self = .directTCPIP(.init(hostToConnectTo: data.targetHost, portToConnectTo: data._targetPort, originatorAddress: data.originatorAddress))
         case .forwardedTCPIP(let data):
             self = .forwardedTCPIP(.init(hostListening: data.listeningHost, portListening: data._listeningPort, originatorAddress: data.originatorAddress))
+        case .directStreamLocal(let data):
+            self = .directStreamLocal(.init(socketPath: data.socketPath))
         }
     }
 }

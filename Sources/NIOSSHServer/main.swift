@@ -66,7 +66,7 @@ func sshChildChannelInitializer(_ channel: Channel, _ channelType: SSHChannelTyp
         }.flatMap { targetChannel in
             targetChannel.pipeline.addHandler(theirs)
         }
-    case .forwardedTCPIP:
+    case .forwardedTCPIP, .directStreamLocal:
         return channel.eventLoop.makeFailedFuture(SSHServerError.invalidChannelType)
     }
 }

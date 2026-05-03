@@ -491,6 +491,11 @@ final class SSHMessagesTests: XCTestCase {
         XCTAssertEqual(try buffer.readSSHMessage(), message)
         try self.assertCorrectlyManagesPartialRead(message)
 
+        message = SSHMessage.channelOpen(.init(type: .directStreamLocal(.init(socketPath: "/var/run/docker.sock")), senderChannel: 7, initialWindowSize: 42, maximumPacketSize: 24))
+        buffer.writeSSHMessage(message)
+        XCTAssertEqual(try buffer.readSSHMessage(), message)
+        try self.assertCorrectlyManagesPartialRead(message)
+
         func writeBadMessage(into buffer: inout ByteBuffer, type: String, firstPort: UInt32, secondPort: UInt32) {
             buffer.writeInteger(SSHMessage.ChannelOpenMessage.id)
             buffer.writeSSHString(type.utf8)
