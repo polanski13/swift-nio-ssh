@@ -494,7 +494,16 @@ extension ChildChannelStateMachine {
             preconditionFailure("Somehow received channel EOF for idle channel")
 
         case .requestedLocally, .requestedRemotely, .closedLocally, .closedRemotely, .closed:
-            preconditionFailure("Sent channel window adjust on channel in invalid state")
+            // Match the throw-on-closed pattern that sibling outbound
+            // methods (sendChannelData, sendChannelExtendedData,
+            // sendChannelEOF, sendChannelClose) already follow. The
+            // outbound caller `SSHChildChannel.handleOutboundChannelWindowAdjust`
+            // is `try`-ed, so this propagates cleanly as a normal
+            // channel-level error instead of crashing the process.
+            // Race triggers it during port-forward teardown where the
+            // RX path drains and replenishes window credit while the
+            // close path is mid-flight.
+            throw NIOSSHError.protocolViolation(protocolName: "channel", violation: "Sent channel window adjust on channel in invalid state.")
         }
     }
 
