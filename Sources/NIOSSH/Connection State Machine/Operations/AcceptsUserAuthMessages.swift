@@ -18,6 +18,8 @@ protocol AcceptsUserAuthMessages: _NIOSSHSendableMetatype {
     var userAuthStateMachine: UserAuthenticationStateMachine { get set }
 
     var role: SSHConnectionRole { get }
+
+    var connectionAttributes: SSHConnectionStateMachine.Attributes? { get }
 }
 
 /// This event indicates that server wants us to display the following message to the end user.
@@ -40,6 +42,10 @@ public struct UserAuthSuccessEvent: Hashable, Sendable {
 }
 
 extension AcceptsUserAuthMessages {
+    var connectionAttributes: SSHConnectionStateMachine.Attributes? {
+        nil
+    }
+
     mutating func receiveServiceRequest(
         _ message: SSHMessage.ServiceRequestMessage
     ) throws -> SSHConnectionStateMachine.StateMachineInboundProcessResult {
@@ -81,7 +87,12 @@ extension AcceptsUserAuthMessages {
                 banner = nil
             }
 
-            return .possibleFutureMessage(future.map { Self.transform($0, banner: banner) })
+            let attributes = self.connectionAttributes
+            return .possibleFutureMessage(
+                future.map {
+                    Self.transform($0, username: message.username, connectionAttributes: attributes, banner: banner)
+                }
+            )
         } else {
             return .noMessage
         }
@@ -120,10 +131,13 @@ extension AcceptsUserAuthMessages {
 
     private static func transform(
         _ result: NIOSSHUserAuthenticationResponseMessage,
+        username: String? = nil,
+        connectionAttributes: SSHConnectionStateMachine.Attributes? = nil,
         banner: SSHServerConfiguration.UserAuthBanner? = nil
     ) -> SSHMultiMessage {
         switch result {
         case .success:
+            connectionAttributes?.username = username
             if let banner = banner {
                 // Send banner bundled with auth success to avoid leaking any information to unauthenticated clients.
                 // Note that this is by no means the only option according to RFC 4252

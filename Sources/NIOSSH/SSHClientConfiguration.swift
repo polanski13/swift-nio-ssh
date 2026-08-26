@@ -26,6 +26,9 @@ public struct SSHClientConfiguration {
     /// Supported data encryption algorithms
     public var transportProtectionSchemes: [NIOSSHTransportProtection.Type]
 
+    /// Supported key-exchange algorithms, in preference order.
+    public var keyExchangeAlgorithms: [any NIOSSHKeyExchangeAlgorithmProtocol.Type]
+
     /// The maximum size, in bytes, of a channel data payload this peer is willing to receive (the
     /// "maximum packet size" of an SSH channel, RFC 4254 §5.1). It is advertised to the remote peer
     /// when opening channels and bounds inbound encrypted packets. Defaults to `1 << 17` (128 KiB).
@@ -59,7 +62,8 @@ public struct SSHClientConfiguration {
             userAuthDelegate: userAuthDelegate,
             serverAuthDelegate: serverAuthDelegate,
             globalRequestDelegate: globalRequestDelegate,
-            transportProtectionSchemes: Constants.bundledTransportProtectionSchemes
+            transportProtectionSchemes: Constants.bundledTransportProtectionSchemes,
+            keyExchangeAlgorithms: SSHKeyExchangeStateMachine.bundledKeyExchangeImplementations
         )
     }
 
@@ -69,10 +73,27 @@ public struct SSHClientConfiguration {
         globalRequestDelegate: GlobalRequestDelegate? = nil,
         transportProtectionSchemes: [NIOSSHTransportProtection.Type]
     ) {
+        self.init(
+            userAuthDelegate: userAuthDelegate,
+            serverAuthDelegate: serverAuthDelegate,
+            globalRequestDelegate: globalRequestDelegate,
+            transportProtectionSchemes: transportProtectionSchemes,
+            keyExchangeAlgorithms: SSHKeyExchangeStateMachine.bundledKeyExchangeImplementations
+        )
+    }
+
+    public init(
+        userAuthDelegate: NIOSSHClientUserAuthenticationDelegate,
+        serverAuthDelegate: NIOSSHClientServerAuthenticationDelegate,
+        globalRequestDelegate: GlobalRequestDelegate? = nil,
+        transportProtectionSchemes: [NIOSSHTransportProtection.Type],
+        keyExchangeAlgorithms: [any NIOSSHKeyExchangeAlgorithmProtocol.Type]
+    ) {
         self.userAuthDelegate = userAuthDelegate
         self.serverAuthDelegate = serverAuthDelegate
         self.globalRequestDelegate = globalRequestDelegate ?? DefaultGlobalRequestDelegate()
         self.transportProtectionSchemes = transportProtectionSchemes
+        self.keyExchangeAlgorithms = keyExchangeAlgorithms
     }
 }
 

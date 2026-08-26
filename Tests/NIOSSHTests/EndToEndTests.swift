@@ -227,6 +227,14 @@ class EndToEndTests: XCTestCase {
         self.channel = nil
     }
 
+    func testServerRecordsAuthenticatedUsername() throws {
+        try self.channel.configureWithHarness(TestHarness())
+        try self.channel.activate()
+        try self.channel.interactInMemory()
+
+        XCTAssertEqual(self.channel.serverSSHHandler?.username, "foo")
+    }
+
     /// This test validates that all the channel requests round-trip appropriately.
     func testChannelRequests() throws {
         XCTAssertNoThrow(try self.channel.configureWithHarness(TestHarness()))

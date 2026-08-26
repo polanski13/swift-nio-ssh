@@ -22,23 +22,41 @@ import FoundationEssentials
 import Foundation
 #endif
 
-/// This protocol defines a container used by the key exchange state machine to manage key exchange.
-/// This type erases the specific key exchanger.
-protocol EllipticCurveKeyExchangeProtocol: _NIOSSHSendableMetatype {
+/// The server-side result of an application-defined key exchange.
+public struct NIOSSHKeyExchangeServerReply {
+    public var hostKey: NIOSSHPublicKey
+    public var publicKey: ByteBuffer
+    public var signature: NIOSSHSignature
+
+    public init(hostKey: NIOSSHPublicKey, publicKey: ByteBuffer, signature: NIOSSHSignature) {
+        self.hostKey = hostKey
+        self.publicKey = publicKey
+        self.signature = signature
+    }
+}
+
+/// A key-exchange implementation supplied to an SSH client or server configuration.
+///
+/// The payload methods intentionally use `ByteBuffer`: SSH key-exchange extensions share message
+/// identifiers 30 and 31, while their payload encoding is algorithm-specific.
+public protocol NIOSSHKeyExchangeAlgorithmProtocol: _NIOSSHSendableMetatype {
+    static var keyExchangeInitMessageId: UInt8 { get }
+    static var keyExchangeReplyMessageId: UInt8 { get }
+
     init(ourRole: SSHConnectionRole, previousSessionIdentifier: ByteBuffer?)
 
-    func initiateKeyExchangeClientSide(allocator: ByteBufferAllocator) -> SSHMessage.KeyExchangeECDHInitMessage
+    func initiateKeyExchangeClientSide(allocator: ByteBufferAllocator) -> ByteBuffer
 
     mutating func completeKeyExchangeServerSide(
-        clientKeyExchangeMessage message: SSHMessage.KeyExchangeECDHInitMessage,
+        clientKeyExchangeMessage message: ByteBuffer,
         serverHostKey: NIOSSHPrivateKey,
         initialExchangeBytes: inout ByteBuffer,
         allocator: ByteBufferAllocator,
         expectedKeySizes: ExpectedKeySizes
-    ) throws -> (KeyExchangeResult, SSHMessage.KeyExchangeECDHReplyMessage)
+    ) throws -> (KeyExchangeResult, NIOSSHKeyExchangeServerReply)
 
     mutating func receiveServerKeyExchangePayload(
-        serverKeyExchangeMessage message: SSHMessage.KeyExchangeECDHReplyMessage,
+        serverKeyExchangeMessage message: NIOSSHKeyExchangeServerReply,
         initialExchangeBytes: inout ByteBuffer,
         allocator: ByteBufferAllocator,
         expectedKeySizes: ExpectedKeySizes
@@ -47,12 +65,15 @@ protocol EllipticCurveKeyExchangeProtocol: _NIOSSHSendableMetatype {
     static var keyExchangeAlgorithmNames: [Substring] { get }
 }
 
-struct EllipticCurveKeyExchange<PrivateKey: ECDHCompatiblePrivateKey>: EllipticCurveKeyExchangeProtocol {
+struct EllipticCurveKeyExchange<PrivateKey: ECDHCompatiblePrivateKey>: NIOSSHKeyExchangeAlgorithmProtocol {
     private var previousSessionIdentifier: ByteBuffer?
     private var ourKey: PrivateKey
     private var theirKey: PrivateKey.PublicKey?
     private var ourRole: SSHConnectionRole
     private var sharedSecret: SharedSecret?
+
+    static var keyExchangeInitMessageId: UInt8 { 30 }
+    static var keyExchangeReplyMessageId: UInt8 { 31 }
 
     init(ourRole: SSHConnectionRole, previousSessionIdentifier: ByteBuffer?) {
         self.ourRole = ourRole
@@ -69,14 +90,14 @@ extension EllipticCurveKeyExchange {
     /// Initiates key exchange by producing an SSH message.
     ///
     /// For now, we just return the ByteBuffer containing the SSH string.
-    func initiateKeyExchangeClientSide(allocator: ByteBufferAllocator) -> SSHMessage.KeyExchangeECDHInitMessage {
+    func initiateKeyExchangeClientSide(allocator: ByteBufferAllocator) -> ByteBuffer {
         precondition(self.ourRole.isClient, "Only clients may initiate the client side key exchange!")
 
         // The largest key we're likely to end up with here is 256 bytes.
         var buffer = allocator.buffer(capacity: 256)
         self.ourKey.publicKey.write(to: &buffer)
 
-        return .init(publicKey: buffer)
+        return buffer
     }
 
     /// Handles receiving the client key exchange payload on the server side.
@@ -88,17 +109,17 @@ extension EllipticCurveKeyExchange {
     ///     - allocator: A `ByteBufferAllocator` suitable for this connection.
     ///     - expectedKeySizes: The sizes of the keys we need to generate.
     mutating func completeKeyExchangeServerSide(
-        clientKeyExchangeMessage message: SSHMessage.KeyExchangeECDHInitMessage,
+        clientKeyExchangeMessage message: ByteBuffer,
         serverHostKey: NIOSSHPrivateKey,
         initialExchangeBytes: inout ByteBuffer,
         allocator: ByteBufferAllocator,
         expectedKeySizes: ExpectedKeySizes
-    ) throws -> (KeyExchangeResult, SSHMessage.KeyExchangeECDHReplyMessage) {
+    ) throws -> (KeyExchangeResult, NIOSSHKeyExchangeServerReply) {
         precondition(self.ourRole.isServer, "Only servers may receive a client key exchange packet!")
 
         // With that, we have enough to finalize the key exchange.
         let kexResult = try self.finalizeKeyExchange(
-            theirKeyBytes: message.publicKey,
+            theirKeyBytes: message,
             initialExchangeBytes: &initialExchangeBytes,
             serverHostKey: serverHostKey.publicKey,
             allocator: allocator,
@@ -114,7 +135,7 @@ extension EllipticCurveKeyExchange {
         self.ourKey.publicKey.write(to: &publicKeyBytes)
 
         // Now we have all we need.
-        let responseMessage = SSHMessage.KeyExchangeECDHReplyMessage(
+        let responseMessage = NIOSSHKeyExchangeServerReply(
             hostKey: serverHostKey.publicKey,
             publicKey: publicKeyBytes,
             signature: exchangeHashSignature
@@ -133,7 +154,7 @@ extension EllipticCurveKeyExchange {
     ///     - allocator: A `ByteBufferAllocator` suitable for this connection.
     ///     - expectedKeySizes: The sizes of the keys we need to generate.
     mutating func receiveServerKeyExchangePayload(
-        serverKeyExchangeMessage message: SSHMessage.KeyExchangeECDHReplyMessage,
+        serverKeyExchangeMessage message: NIOSSHKeyExchangeServerReply,
         initialExchangeBytes: inout ByteBuffer,
         allocator: ByteBufferAllocator,
         expectedKeySizes: ExpectedKeySizes
@@ -333,13 +354,11 @@ extension EllipticCurveKeyExchange {
         sessionID: ByteBuffer,
         expectedKeySize: Int
     ) -> [UInt8] {
-        assert(expectedKeySize <= PrivateKey.Hasher.Digest.byteCount)
-        return Array(
-            self.generateSpecificHash(
-                baseHasher: baseHasher,
-                discriminatorByte: UInt8(ascii: "A"),
-                sessionID: sessionID
-            ).prefix(expectedKeySize)
+        self.generateKeyMaterial(
+            baseHasher: baseHasher,
+            discriminatorByte: UInt8(ascii: "A"),
+            sessionID: sessionID,
+            expectedKeySize: expectedKeySize
         )
     }
 
@@ -348,13 +367,11 @@ extension EllipticCurveKeyExchange {
         sessionID: ByteBuffer,
         expectedKeySize: Int
     ) -> [UInt8] {
-        assert(expectedKeySize <= PrivateKey.Hasher.Digest.byteCount)
-        return Array(
-            self.generateSpecificHash(
-                baseHasher: baseHasher,
-                discriminatorByte: UInt8(ascii: "B"),
-                sessionID: sessionID
-            ).prefix(expectedKeySize)
+        self.generateKeyMaterial(
+            baseHasher: baseHasher,
+            discriminatorByte: UInt8(ascii: "B"),
+            sessionID: sessionID,
+            expectedKeySize: expectedKeySize
         )
     }
 
@@ -363,14 +380,13 @@ extension EllipticCurveKeyExchange {
         sessionID: ByteBuffer,
         expectedKeySize: Int
     ) -> SymmetricKey {
-        assert(expectedKeySize <= PrivateKey.Hasher.Digest.byteCount)
-        return SymmetricKey.truncatingDigest(
-            self.generateSpecificHash(
+        SymmetricKey(
+            data: self.generateKeyMaterial(
                 baseHasher: baseHasher,
                 discriminatorByte: UInt8(ascii: "C"),
-                sessionID: sessionID
-            ),
-            length: expectedKeySize
+                sessionID: sessionID,
+                expectedKeySize: expectedKeySize
+            )
         )
     }
 
@@ -379,14 +395,13 @@ extension EllipticCurveKeyExchange {
         sessionID: ByteBuffer,
         expectedKeySize: Int
     ) -> SymmetricKey {
-        assert(expectedKeySize <= PrivateKey.Hasher.Digest.byteCount)
-        return SymmetricKey.truncatingDigest(
-            self.generateSpecificHash(
+        SymmetricKey(
+            data: self.generateKeyMaterial(
                 baseHasher: baseHasher,
                 discriminatorByte: UInt8(ascii: "D"),
-                sessionID: sessionID
-            ),
-            length: expectedKeySize
+                sessionID: sessionID,
+                expectedKeySize: expectedKeySize
+            )
         )
     }
 
@@ -395,14 +410,13 @@ extension EllipticCurveKeyExchange {
         sessionID: ByteBuffer,
         expectedKeySize: Int
     ) -> SymmetricKey {
-        assert(expectedKeySize <= PrivateKey.Hasher.Digest.byteCount)
-        return SymmetricKey.truncatingDigest(
-            self.generateSpecificHash(
+        SymmetricKey(
+            data: self.generateKeyMaterial(
                 baseHasher: baseHasher,
                 discriminatorByte: UInt8(ascii: "E"),
-                sessionID: sessionID
-            ),
-            length: expectedKeySize
+                sessionID: sessionID,
+                expectedKeySize: expectedKeySize
+            )
         )
     }
 
@@ -411,15 +425,46 @@ extension EllipticCurveKeyExchange {
         sessionID: ByteBuffer,
         expectedKeySize: Int
     ) -> SymmetricKey {
-        assert(expectedKeySize <= PrivateKey.Hasher.Digest.byteCount)
-        return SymmetricKey.truncatingDigest(
-            self.generateSpecificHash(
+        SymmetricKey(
+            data: self.generateKeyMaterial(
                 baseHasher: baseHasher,
                 discriminatorByte: UInt8(ascii: "F"),
-                sessionID: sessionID
-            ),
-            length: expectedKeySize
+                sessionID: sessionID,
+                expectedKeySize: expectedKeySize
+            )
         )
+    }
+
+    /// Expands key material as specified by RFC 4253 section 7.2. The first block is
+    /// HASH(K || H || X || session_id); subsequent blocks are HASH(K || H || K1 || ... || Kn).
+    /// This is required whenever a transport asks for more bytes than the KEX hash emits, for
+    /// example Curve25519/SHA-256 combined with HMAC-SHA2-512.
+    private func generateKeyMaterial(
+        baseHasher: PrivateKey.Hasher,
+        discriminatorByte: UInt8,
+        sessionID: ByteBuffer,
+        expectedKeySize: Int
+    ) -> [UInt8] {
+        precondition(expectedKeySize >= 0, "Key sizes cannot be negative")
+        guard expectedKeySize > 0 else {
+            return []
+        }
+
+        var material = Array(
+            self.generateSpecificHash(
+                baseHasher: baseHasher,
+                discriminatorByte: discriminatorByte,
+                sessionID: sessionID
+            )
+        )
+
+        while material.count < expectedKeySize {
+            var continuationHasher = baseHasher
+            continuationHasher.update(data: material)
+            material.append(contentsOf: continuationHasher.finalize())
+        }
+
+        return Array(material.prefix(expectedKeySize))
     }
 
     private func generateSpecificHash(
@@ -453,16 +498,6 @@ extension KeyExchangeResult {
     ) {
         self.keys = innerResult.keys
         self.sessionID = innerResult.sessionID
-    }
-}
-
-extension SymmetricKey {
-    /// Creates a symmetric key by truncating a given digest.
-    fileprivate static func truncatingDigest<D: Digest>(_ digest: D, length: Int) -> SymmetricKey {
-        assert(length <= D.byteCount)
-        return digest.withUnsafeBytes { bodyPtr in
-            SymmetricKey(data: UnsafeRawBufferPointer(rebasing: bodyPtr.prefix(length)))
-        }
     }
 }
 

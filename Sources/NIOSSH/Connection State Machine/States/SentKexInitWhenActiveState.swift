@@ -46,6 +46,7 @@ extension SSHConnectionStateMachine {
                 loop: loop,
                 role: self.role,
                 remoteVersion: self.remoteVersion,
+                keyExchangeAlgorithms: self.role.keyExchangeAlgorithms,
                 protectionSchemes: self.protectionSchemes,
                 previousSessionIdentifier: previous.sessionIdentifier
             )

@@ -35,7 +35,9 @@ extension SSHConnectionStateMachine {
         /// The backing state machine.
         var userAuthStateMachine: UserAuthenticationStateMachine
 
-        init(sentNewKeysState state: SentNewKeysState) {
+        let connectionAttributes: SSHConnectionStateMachine.Attributes?
+
+        init(sentNewKeysState state: SentNewKeysState, connectionAttributes: SSHConnectionStateMachine.Attributes) {
             self.role = state.role
             self.parser = state.parser
             self.serializer = state.serializer
@@ -43,9 +45,13 @@ extension SSHConnectionStateMachine {
             self.remoteVersion = state.remoteVersion
             self.protectionSchemes = state.protectionSchemes
             self.sessionIdentifier = state.sessionIdentifier
+            self.connectionAttributes = connectionAttributes
         }
 
-        init(receivedNewKeysState state: ReceivedNewKeysState) {
+        init(
+            receivedNewKeysState state: ReceivedNewKeysState,
+            connectionAttributes: SSHConnectionStateMachine.Attributes
+        ) {
             self.role = state.role
             self.parser = state.parser
             self.serializer = state.serializer
@@ -53,6 +59,7 @@ extension SSHConnectionStateMachine {
             self.remoteVersion = state.remoteVersion
             self.protectionSchemes = state.protectionSchemes
             self.sessionIdentifier = state.sessionIdentifier
+            self.connectionAttributes = connectionAttributes
         }
 
         mutating func bufferInboundData(_ data: inout ByteBuffer) {

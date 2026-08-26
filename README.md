@@ -2,6 +2,25 @@
 
 This project contains SSH support using [SwiftNIO](https://github.com/apple/swift-nio).
 
+## Termy downstream
+
+The Termy branch is forward-ported from upstream `0.15.0` and retains the extensions required by
+Termy and Citadel:
+
+- application-defined public keys, private keys, signatures, and key-exchange algorithms for RSA,
+  SSH-agent, PIV, and FIDO-backed authentication;
+- configurable key-exchange and transport protection lists, including multiple MAC algorithms per
+  cipher;
+- public key serialization, signature validation, authenticated-user access, OpenSSH keepalives,
+  and `direct-streamlocal@openssh.com` channels;
+- the Termy client identification string and recoverable handling of window adjustments received
+  after channel closure;
+- RFC 4253 key-material expansion when a negotiated cipher or MAC needs more bytes than the key
+  exchange hash emits.
+
+Upstream security fixes and protocol guards from `0.15.0` remain in place. Downstream changes are
+covered by custom-algorithm, key-derivation, and full upstream regression tests.
+
 ## What is SwiftNIO SSH?
 
 SwiftNIO SSH is a programmatic implementation of SSH: that is, it is a collection of APIs that allow programmers to implement SSH-speaking endpoints. Critically, this means it is more like libssh2 than openssh. SwiftNIO SSH does not ship production-ready SSH clients and servers, but instead provides the building blocks for building this kind of client and server.

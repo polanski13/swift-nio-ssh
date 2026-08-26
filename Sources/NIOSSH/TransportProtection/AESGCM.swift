@@ -32,17 +32,21 @@ internal class AESGCMTransportProtection {
         fatalError("Must override cipher name")
     }
 
-    class var macName: String? {
+    class var macNames: [String] {
         fatalError("Must override MAC name")
     }
 
-    class var keySizes: ExpectedKeySizes {
+    class func keySizes(forMac mac: String?) throws -> ExpectedKeySizes {
         fatalError("Must override key size")
     }
 
-    required init(initialKeys: NIOSSHSessionKeys) throws {
-        guard initialKeys.outboundEncryptionKey.bitCount == Self.keySizes.encryptionKeySize * 8,
-            initialKeys.inboundEncryptionKey.bitCount == Self.keySizes.encryptionKeySize * 8
+    required init(initialKeys: NIOSSHSessionKeys, mac: String?) throws {
+        guard mac == nil else {
+            throw NIOSSHError.invalidKeySize
+        }
+        let keySizes = try Self.keySizes(forMac: mac)
+        guard initialKeys.outboundEncryptionKey.bitCount == keySizes.encryptionKeySize * 8,
+            initialKeys.inboundEncryptionKey.bitCount == keySizes.encryptionKeySize * 8
         else {
             throw NIOSSHError.invalidKeySize
         }
@@ -68,8 +72,9 @@ extension AESGCMTransportProtection: NIOSSHTransportProtection {
     }
 
     func updateKeys(_ newKeys: NIOSSHSessionKeys) throws {
-        guard newKeys.outboundEncryptionKey.bitCount == Self.keySizes.encryptionKeySize * 8,
-            newKeys.inboundEncryptionKey.bitCount == Self.keySizes.encryptionKeySize * 8
+        let keySizes = try Self.keySizes(forMac: nil)
+        guard newKeys.outboundEncryptionKey.bitCount == keySizes.encryptionKeySize * 8,
+            newKeys.inboundEncryptionKey.bitCount == keySizes.encryptionKeySize * 8
         else {
             throw NIOSSHError.invalidKeySize
         }
@@ -162,17 +167,20 @@ extension AESGCMTransportProtection: NIOSSHTransportProtection {
 /// algorithm, and instead by ignoring the result of the MAC negotiation.
 ///
 /// This algorithm does not encrypt the length field, instead encoding it as associated data.
-final class AES128GCMOpenSSHTransportProtection: AESGCMTransportProtection, _NIOSSHSendableMetatype {
+final class AES128GCMOpenSSHTransportProtection: AESGCMTransportProtection {
     override static var cipherName: String {
         "aes128-gcm@openssh.com"
     }
 
-    override static var macName: String? {
-        nil
+    override static var macNames: [String] {
+        []
     }
 
-    override static var keySizes: ExpectedKeySizes {
-        .init(ivSize: 12, encryptionKeySize: 16, macKeySize: 16)
+    override static func keySizes(forMac mac: String?) throws -> ExpectedKeySizes {
+        guard mac == nil else {
+            throw NIOSSHError.invalidKeySize
+        }
+        return .init(ivSize: 12, encryptionKeySize: 16, macKeySize: 16)
     }
 }
 
@@ -182,17 +190,20 @@ final class AES128GCMOpenSSHTransportProtection: AESGCMTransportProtection, _NIO
 /// algorithm, and instead by ignoring the result of the MAC negotiation.
 ///
 /// This algorithm does not encrypt the length field, instead encoding it as associated data.
-final class AES256GCMOpenSSHTransportProtection: AESGCMTransportProtection, _NIOSSHSendableMetatype {
+final class AES256GCMOpenSSHTransportProtection: AESGCMTransportProtection {
     override static var cipherName: String {
         "aes256-gcm@openssh.com"
     }
 
-    override static var macName: String? {
-        nil
+    override static var macNames: [String] {
+        []
     }
 
-    override static var keySizes: ExpectedKeySizes {
-        .init(ivSize: 12, encryptionKeySize: 32, macKeySize: 16)
+    override static func keySizes(forMac mac: String?) throws -> ExpectedKeySizes {
+        guard mac == nil else {
+            throw NIOSSHError.invalidKeySize
+        }
+        return .init(ivSize: 12, encryptionKeySize: 32, macKeySize: 16)
     }
 }
 

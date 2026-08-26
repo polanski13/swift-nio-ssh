@@ -44,18 +44,24 @@ import NIOCore
 /// Implementers of this protocol **must not** expose unauthenticated plaintext, except for the length field. This
 /// is required by the SSH protocol, and swift-nio-ssh does its best to treat the length field as fundamentally
 /// untrusted information.
-public protocol NIOSSHTransportProtection: AnyObject {
+public protocol NIOSSHTransportProtection: AnyObject, _NIOSSHSendableMetatype {
     /// The name of the cipher portion of this transport protection scheme as negotiated on the wire.
     static var cipherName: String { get }
 
-    /// The name of the MAC portion of this transport protection scheme as negotiated on the wire. May be nil, in which
-    /// case this scheme does not care about the MAC field because it is an @openssh.org style AEAD construction.
+    /// MAC algorithms supported by this cipher, in preference order. An empty list means this is an
+    /// `@openssh.com` AEAD construction that ignores the independently negotiated MAC field.
+    static var macNames: [String] { get }
+
+    /// Compatibility requirement for implementations that expose a single MAC.
     static var macName: String? { get }
 
     /// The block size of the cipher in this protection scheme.
     static var cipherBlockSize: Int { get }
 
-    /// The key sizes required for this protection scheme.
+    /// The key sizes required for the selected cipher/MAC pair.
+    static func keySizes(forMac mac: String?) throws -> ExpectedKeySizes
+
+    /// Compatibility requirement for implementations with one fixed set of key sizes.
     static var keySizes: ExpectedKeySizes { get }
 
     /// The number of bytes consumed by the MAC
@@ -66,6 +72,9 @@ public protocol NIOSSHTransportProtection: AnyObject {
     var lengthEncrypted: Bool { get }
 
     /// Create a new instance of this transport protection scheme with the given keys.
+    init(initialKeys: NIOSSHSessionKeys, mac: String?) throws
+
+    /// Compatibility initializer for implementations that expose a single MAC.
     init(initialKeys: NIOSSHSessionKeys) throws
 
     /// A rekey has occurred and the encryption keys need to be changed.
@@ -98,6 +107,43 @@ public protocol NIOSSHTransportProtection: AnyObject {
 }
 
 extension NIOSSHTransportProtection {
+    /// Default multi-MAC view for legacy single-MAC implementations.
+    static var macNames: [String] {
+        Self.macName.map { [$0] } ?? []
+    }
+
+    /// Compatibility view for single-MAC callers.
+    static var macName: String? {
+        Self.macNames.first
+    }
+
+    /// Compatibility view for callers that use the scheme's preferred MAC.
+    static var keySizes: ExpectedKeySizes {
+        // A scheme must be internally consistent about its own preferred MAC.
+        try! Self.keySizes(forMac: Self.macName)
+    }
+
+    /// Default selected-MAC view for legacy fixed-size implementations.
+    static func keySizes(forMac mac: String?) throws -> ExpectedKeySizes {
+        guard mac == Self.macName else {
+            throw NIOSSHError.keyExchangeNegotiationFailure
+        }
+        return Self.keySizes
+    }
+
+    /// Creates a scheme using its preferred MAC.
+    init(initialKeys: NIOSSHSessionKeys) throws {
+        try self.init(initialKeys: initialKeys, mac: Self.macName)
+    }
+
+    /// Default multi-MAC initializer for legacy single-MAC implementations.
+    init(initialKeys: NIOSSHSessionKeys, mac: String?) throws {
+        guard mac == Self.macName else {
+            throw NIOSSHError.keyExchangeNegotiationFailure
+        }
+        try self.init(initialKeys: initialKeys)
+    }
+
     /// Obtains the block size for this specific instantiated cipher.
     var cipherBlockSize: Int {
         // We just delegate to the static.

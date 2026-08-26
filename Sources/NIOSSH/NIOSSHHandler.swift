@@ -63,6 +63,11 @@ public final class NIOSSHHandler {
 
     private var pendingGlobalRequestResponses: CircularBuffer<PendingGlobalRequestResponse?>
 
+    /// The authenticated username on a server connection, once authentication succeeds.
+    public var username: String? {
+        self.stateMachine.username
+    }
+
     /// Construct a new ``NIOSSHHandler``.
     ///
     /// - parameters:

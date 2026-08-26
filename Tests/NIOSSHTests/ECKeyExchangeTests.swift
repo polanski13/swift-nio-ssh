@@ -310,6 +310,43 @@ final class KeyExchangeTests: XCTestCase {
         self.keyExchangeAgreed(serverKeys, clientKeys)
     }
 
+    func testCurve25519ExpandsSHA256MaterialForSHA512MACKeys() throws {
+        var server = EllipticCurveKeyExchange<Curve25519.KeyAgreement.PrivateKey>(
+            ourRole: .server([.init(ed25519Key: .init())]),
+            previousSessionIdentifier: nil
+        )
+        var client = EllipticCurveKeyExchange<Curve25519.KeyAgreement.PrivateKey>(
+            ourRole: .client,
+            previousSessionIdentifier: nil
+        )
+        let serverHostKey = NIOSSHPrivateKey(ed25519Key: .init())
+        let expectedKeySizes = ExpectedKeySizes(ivSize: 16, encryptionKeySize: 32, macKeySize: 64)
+        var initialExchangeBytes = ByteBufferAllocator().buffer(capacity: 1024)
+
+        let clientMessage = client.initiateKeyExchangeClientSide(allocator: ByteBufferAllocator())
+        let (serverKeys, serverResponse) = try server.completeKeyExchangeServerSide(
+            clientKeyExchangeMessage: clientMessage,
+            serverHostKey: serverHostKey,
+            initialExchangeBytes: &initialExchangeBytes,
+            allocator: ByteBufferAllocator(),
+            expectedKeySizes: expectedKeySizes
+        )
+
+        initialExchangeBytes.clear()
+        let clientKeys = try client.receiveServerKeyExchangePayload(
+            serverKeyExchangeMessage: serverResponse,
+            initialExchangeBytes: &initialExchangeBytes,
+            allocator: ByteBufferAllocator(),
+            expectedKeySizes: expectedKeySizes
+        )
+
+        self.keyExchangeAgreed(serverKeys, clientKeys)
+        XCTAssertEqual(serverKeys.keys.inboundMACKey.bitCount, 512)
+        XCTAssertEqual(serverKeys.keys.outboundMACKey.bitCount, 512)
+        XCTAssertEqual(clientKeys.keys.inboundMACKey.bitCount, 512)
+        XCTAssertEqual(clientKeys.keys.outboundMACKey.bitCount, 512)
+    }
+
     func testDisagreeingOnInitialExchangeBytesLeadsToFailedKeyExchange() throws {
         var server = EllipticCurveKeyExchange<Curve25519.KeyAgreement.PrivateKey>(
             ourRole: .server([.init(ed25519Key: .init())]),

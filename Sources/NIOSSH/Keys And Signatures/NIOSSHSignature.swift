@@ -21,7 +21,9 @@ import NIOFoundationCompat
 ///
 /// This type is intentionally highly opaque: we don't expect users to do anything with this directly.
 /// Instead, we expect them to work with other APIs available on our opaque types.
-public struct NIOSSHSignature: Hashable, Sendable {
+/// Custom signatures are opaque values supplied by the embedding application. They are immutable
+/// after construction; implementations are responsible for the thread-safety of their storage.
+public struct NIOSSHSignature: Hashable, @unchecked Sendable {
     internal var backingSignature: BackingSignature
 
     internal init(backingSignature: BackingSignature) {
@@ -32,7 +34,7 @@ public struct NIOSSHSignature: Hashable, Sendable {
 // swift-format-ignore: DontRepeatTypeInStaticProperties
 extension NIOSSHSignature {
     /// The various signature types that can be used with NIOSSH.
-    internal enum BackingSignature: Sendable {
+    internal enum BackingSignature {
         // There is no structured Signature type for Curve25519, and we may want Data or ByteBuffer.
         case ed25519(RawBytes)
 
@@ -41,6 +43,8 @@ extension NIOSSHSignature {
         case ecdsaP384(P384.Signing.ECDSASignature)
 
         case ecdsaP521(P521.Signing.ECDSASignature)
+
+        case custom(any NIOSSHSignatureProtocol)
 
         internal enum RawBytes {
             case byteBuffer(ByteBuffer)
@@ -93,10 +97,13 @@ extension NIOSSHSignature.BackingSignature: Equatable {
             return lhs.rawRepresentation == rhs.rawRepresentation
         case (.ecdsaP521(let lhs), .ecdsaP521(let rhs)):
             return lhs.rawRepresentation == rhs.rawRepresentation
+        case (.custom(let lhs), .custom(let rhs)):
+            return lhs.signaturePrefix == rhs.signaturePrefix && lhs.rawRepresentation == rhs.rawRepresentation
         case (.ed25519, _),
             (.ecdsaP256, _),
             (.ecdsaP384, _),
-            (.ecdsaP521, _):
+            (.ecdsaP521, _),
+            (.custom, _):
             return false
         }
     }
@@ -117,6 +124,10 @@ extension NIOSSHSignature.BackingSignature: Hashable {
         case .ecdsaP521(let sig):
             hasher.combine(3)
             hasher.combine(sig.rawRepresentation)
+        case .custom(let sig):
+            hasher.combine(4)
+            hasher.combine(sig.signaturePrefix)
+            hasher.combine(sig.rawRepresentation)
         }
     }
 }
@@ -134,6 +145,10 @@ extension ByteBuffer {
             return self.writeECDSAP384Signature(baseSignature: sig)
         case .ecdsaP521(let sig):
             return self.writeECDSAP521Signature(baseSignature: sig)
+        case .custom(let sig):
+            var writtenLength = self.writeSSHString(sig.signaturePrefix.utf8)
+            writtenLength += sig.write(to: &self)
+            return writtenLength
         }
     }
 
@@ -230,6 +245,13 @@ extension ByteBuffer {
             } else if bytesView.elementsEqual(NIOSSHSignature.ecdsaP521SignaturePrefix) {
                 return try buffer.readECDSAP521Signature()
             } else {
+                for signatureType in NIOSSHPublicKey.customSignatureAlgorithms {
+                    if bytesView.elementsEqual(signatureType.signaturePrefix.utf8) {
+                        let signature = try signatureType.read(from: &buffer)
+                        return NIOSSHSignature(backingSignature: .custom(signature))
+                    }
+                }
+
                 // We don't know this signature type.
                 let signature =
                     signatureIdentifierBytes.readString(length: signatureIdentifierBytes.readableBytes)

@@ -12,6 +12,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+import NIOConcurrencyHelpers
 import NIOCore
 
 struct SSHConnectionStateMachine {
@@ -101,7 +102,8 @@ struct SSHConnectionStateMachine {
 
         mutating func processInboundMessage(
             allocator: ByteBufferAllocator,
-            loop: EventLoop
+            loop: EventLoop,
+            connectionAttributes: Attributes
         ) throws -> StateMachineInboundProcessResult? {
             switch self {
             case .idle:
@@ -224,7 +226,9 @@ struct SSHConnectionStateMachine {
                         return result
                     case .newKeys:
                         try state.receiveNewKeysMessage()
-                        self = .userAuthentication(.init(sentNewKeysState: state))
+                        self = .userAuthentication(
+                            .init(sentNewKeysState: state, connectionAttributes: connectionAttributes)
+                        )
                         return .noMessage
                     case .disconnect:
                         self = .receivedDisconnect(state.role)
@@ -772,10 +776,27 @@ struct SSHConnectionStateMachine {
     /// The state of this state machine.
     private var state: State
 
+    final class Attributes: @unchecked Sendable {
+        private let lock = NIOLock()
+        private var storedUsername: String?
+
+        var username: String? {
+            get { self.lock.withLock { self.storedUsername } }
+            set { self.lock.withLock { self.storedUsername = newValue } }
+        }
+    }
+
+    private let attributes: Attributes
+
+    var username: String? {
+        self.attributes.username
+    }
+
     init(
         role: SSHConnectionRole,
         protectionSchemes: [NIOSSHTransportProtection.Type] = Constants.bundledTransportProtectionSchemes
     ) {
+        self.attributes = Attributes()
         self.state = .idle(IdleState(role: role, protectionSchemes: protectionSchemes))
     }
 
@@ -798,7 +819,11 @@ struct SSHConnectionStateMachine {
         allocator: ByteBufferAllocator,
         loop: EventLoop
     ) throws -> StateMachineInboundProcessResult? {
-        try self.state.processInboundMessage(allocator: allocator, loop: loop)
+        try self.state.processInboundMessage(
+            allocator: allocator,
+            loop: loop,
+            connectionAttributes: self.attributes
+        )
     }
 
     mutating func processOutboundMessage(
@@ -885,7 +910,10 @@ struct SSHConnectionStateMachine {
             case .newKeys:
                 try kex.writeNewKeysMessage(into: &buffer)
 
-                let newState = UserAuthenticationState(receivedNewKeysState: kex)
+                let newState = UserAuthenticationState(
+                    receivedNewKeysState: kex,
+                    connectionAttributes: self.attributes
+                )
                 let possibleMessage = newState.userAuthStateMachine.beginAuthentication()
                 self.state = .userAuthentication(newState)
 

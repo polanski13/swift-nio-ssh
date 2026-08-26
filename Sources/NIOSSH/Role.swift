@@ -47,6 +47,15 @@ public enum SSHConnectionRole {
         }
     }
 
+    internal var keyExchangeAlgorithms: [any NIOSSHKeyExchangeAlgorithmProtocol.Type] {
+        switch self {
+        case .client(let configuration):
+            return configuration.keyExchangeAlgorithms
+        case .server(let configuration):
+            return configuration.keyExchangeAlgorithms
+        }
+    }
+
     /// The maximum size of a channel data payload this peer advertises it is willing to receive,
     /// and against which inbound encrypted packets are bounded.
     internal var maximumPacketSize: UInt32 {

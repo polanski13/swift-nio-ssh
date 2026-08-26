@@ -29,6 +29,9 @@ public struct SSHServerConfiguration {
     /// Supported data encryption algorithms
     public var transportProtectionSchemes: [NIOSSHTransportProtection.Type]
 
+    /// Supported key-exchange algorithms, in preference order.
+    public var keyExchangeAlgorithms: [any NIOSSHKeyExchangeAlgorithmProtocol.Type]
+
     /// The maximum size, in bytes, of a channel data payload this peer is willing to receive (the
     /// "maximum packet size" of an SSH channel, RFC 4254 §5.1). It is advertised to the remote peer
     /// when opening channels and bounds inbound encrypted packets. Defaults to `1 << 17`  (128 KiB).
@@ -70,7 +73,8 @@ public struct SSHServerConfiguration {
             userAuthDelegate: userAuthDelegate,
             globalRequestDelegate: globalRequestDelegate,
             banner: banner,
-            transportProtectionSchemes: Constants.bundledTransportProtectionSchemes
+            transportProtectionSchemes: Constants.bundledTransportProtectionSchemes,
+            keyExchangeAlgorithms: SSHKeyExchangeStateMachine.bundledKeyExchangeImplementations
         )
     }
 
@@ -94,11 +98,30 @@ public struct SSHServerConfiguration {
         banner: UserAuthBanner? = nil,
         transportProtectionSchemes: [NIOSSHTransportProtection.Type]
     ) {
+        self.init(
+            hostKeys: hostKeys,
+            userAuthDelegate: userAuthDelegate,
+            globalRequestDelegate: globalRequestDelegate,
+            banner: banner,
+            transportProtectionSchemes: transportProtectionSchemes,
+            keyExchangeAlgorithms: SSHKeyExchangeStateMachine.bundledKeyExchangeImplementations
+        )
+    }
+
+    public init(
+        hostKeys: [NIOSSHPrivateKey],
+        userAuthDelegate: NIOSSHServerUserAuthenticationDelegate,
+        globalRequestDelegate: GlobalRequestDelegate? = nil,
+        banner: UserAuthBanner? = nil,
+        transportProtectionSchemes: [NIOSSHTransportProtection.Type],
+        keyExchangeAlgorithms: [any NIOSSHKeyExchangeAlgorithmProtocol.Type]
+    ) {
         self.hostKeys = hostKeys
         self.userAuthDelegate = userAuthDelegate
         self.globalRequestDelegate = globalRequestDelegate ?? DefaultGlobalRequestDelegate()
         self.banner = banner
         self.transportProtectionSchemes = transportProtectionSchemes
+        self.keyExchangeAlgorithms = keyExchangeAlgorithms
     }
 }
 
